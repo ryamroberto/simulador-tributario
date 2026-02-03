@@ -7,7 +7,7 @@ from .services.analyzer import ImpactAnalyzer
 
 class SimulationView(APIView):
     """
-    Endpoint para executar a simulação de impacto tributário.
+    Endpoint para executar a simulação de impacto tributário com feedbacks detalhados.
     """
     
     def post(self, request, *args, **kwargs):
@@ -18,7 +18,8 @@ class SimulationView(APIView):
             # Preparar dados para o calculador
             company_data = {
                 'tax_regime': data['tax_regime'],
-                'sector': data['sector']
+                'sector': data['sector'],
+                'state': data.get('state')
             }
             financials = {
                 'monthly_revenue': data['monthly_revenue'],
@@ -29,15 +30,22 @@ class SimulationView(APIView):
             current_tax = TaxCalculator.calculate_current_tax(company_data, financials)
             reform_tax = TaxCalculator.calculate_reform_tax(company_data, financials)
             
-            # Analisar Impacto
-            analysis = ImpactAnalyzer.analyze(current_tax, reform_tax)
+            # Analisar Impacto com sugestões dinâmicas
+            analysis = ImpactAnalyzer.analyze(
+                current_tax, 
+                reform_tax, 
+                sector=data['sector'],
+                uf=data.get('state')
+            )
             
-            # Montar Resposta
+            # Montar Resposta em PT-BR
             response_data = {
                 'resumo_entrada': {
                     'faturamento': data['monthly_revenue'],
                     'custos': data['costs'],
-                    'regime_atual': data['tax_regime']
+                    'regime_atual': data['tax_regime'],
+                    'setor': data['sector'],
+                    'estado': data.get('state', 'Não informado')
                 },
                 'resultados': {
                     'carga_tributaria_atual': current_tax.quantize(TaxCalculator.SN_AVERAGE_RATE),
@@ -48,7 +56,8 @@ class SimulationView(APIView):
                 'analise': {
                     'classificacao_impacto': analysis['impact_classification'],
                     'mensagem': analysis['message'],
-                    'sugestao': "Considere revisar seus créditos tributários e analisar o impacto na precificação final."
+                    'detalhes_setoriais': analysis['detalhes_setoriais'],
+                    'sugestoes': analysis['suggestions']
                 }
             }
             

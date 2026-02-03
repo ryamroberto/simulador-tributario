@@ -12,6 +12,7 @@ class SimulationInputSerializer(serializers.Serializer):
     costs = serializers.DecimalField(max_digits=15, decimal_places=2, required=True)
     tax_regime = serializers.ChoiceField(choices=Company.TaxRegime.choices, required=True)
     sector = serializers.ChoiceField(choices=Company.Sector.choices, required=True)
+    state = serializers.ChoiceField(choices=Company.UF.choices, required=False)
 
     def validate_monthly_revenue(self, value):
         if value <= 0:
