@@ -30,18 +30,48 @@ class TaxCalculatorTest(TestCase):
         # (10000 - 2000) * 0.265 = 8000 * 0.265 = 2120
         self.assertEqual(tax, Decimal('2120.00'))
 
+class ImpactAnalyzerTest(TestCase):
+    def test_analyze_services_negative(self):
+        analysis = ImpactAnalyzer.analyze(Decimal('1000.00'), Decimal('2000.00'), sector='SERVICOS')
+        self.assertEqual(analysis['impact_classification'], 'NEGATIVO')
+        self.assertIn("O setor de serviços tende a ser o mais impactado", analysis['suggestions'][0])
+        self.assertIn("Servicos", analysis['message'])
+
+    def test_analyze_commerce_positive(self):
+        analysis = ImpactAnalyzer.analyze(Decimal('2000.00'), Decimal('1000.00'), sector='COMERCIO')
+        self.assertEqual(analysis['impact_classification'], 'POSITIVO')
+        self.assertIn("A redução da cumulatividade pode beneficiar sua cadeia", analysis['suggestions'][0])
+
+    def test_analyze_with_uf(self):
+        analysis = ImpactAnalyzer.analyze(Decimal('1000.00'), Decimal('1000.00'), sector='INDUSTRIA', uf='SP')
+        self.assertEqual(analysis['impact_classification'], 'NEUTRO')
+        self.assertIn("São Paulo", analysis['detalhes_setoriais'])
+
 class SimulationAPITest(APITestCase):
-    def test_simulation_endpoint(self):
+    def test_simulation_endpoint_full(self):
         url = reverse('simulate')
         data = {
             "monthly_revenue": 10000.00,
             "costs": 2000.00,
             "tax_regime": "SIMPLES_NACIONAL",
-            "sector": "SERVICOS"
+            "sector": "SERVICOS",
+            "state": "SP"
         }
         response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('carga_tributaria_atual', str(response.data))
-        self.assertIn('carga_tributaria_reforma', str(response.data))
-        # Verificar se está em PT-BR
-        self.assertEqual(response.data['analise']['classificacao_impacto'], 'NEGATIVO')
+        self.assertIn('sugestoes', response.data['analise'])
+        self.assertIn('detalhes_setoriais', response.data['analise'])
+        self.assertEqual(response.data['resumo_entrada']['estado'], 'SP')
+        self.assertTrue(len(response.data['analise']['sugestoes']) >= 1)
+
+    def test_simulation_endpoint_no_uf(self):
+        url = reverse('simulate')
+        data = {
+            "monthly_revenue": 10000.00,
+            "costs": 2000.00,
+            "tax_regime": "LUCRO_PRESUMIDO",
+            "sector": "INDUSTRIA"
+        }
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['resumo_entrada']['estado'], 'Não informado')
