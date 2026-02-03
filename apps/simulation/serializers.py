@@ -5,14 +5,44 @@ class SimulationInputSerializer(serializers.Serializer):
     """
     Valida os dados necessários para rodar uma simulação.
     """
-    company_id = serializers.IntegerField(required=False, help_text="ID da empresa cadastrada (opcional)")
+    company_id = serializers.IntegerField(
+        required=False, 
+        label="ID da Empresa",
+        help_text="ID da empresa cadastrada no sistema (opcional)."
+    )
     
-    # Se company_id não for fornecido, estes campos tornam-se obrigatórios para uma simulação "on-the-fly"
-    monthly_revenue = serializers.DecimalField(max_digits=15, decimal_places=2, required=True)
-    costs = serializers.DecimalField(max_digits=15, decimal_places=2, required=True)
-    tax_regime = serializers.ChoiceField(choices=Company.TaxRegime.choices, required=True)
-    sector = serializers.ChoiceField(choices=Company.Sector.choices, required=True)
-    state = serializers.ChoiceField(choices=Company.UF.choices, required=False)
+    monthly_revenue = serializers.DecimalField(
+        max_digits=15, 
+        decimal_places=2, 
+        required=True,
+        label="Faturamento Mensal",
+        help_text="Faturamento bruto mensal da empresa."
+    )
+    costs = serializers.DecimalField(
+        max_digits=15, 
+        decimal_places=2, 
+        required=True,
+        label="Custos Mensais",
+        help_text="Custos operacionais mensais dedutíveis."
+    )
+    tax_regime = serializers.ChoiceField(
+        choices=Company.TaxRegime.choices, 
+        required=True,
+        label="Regime Tributário",
+        help_text="Regime tributário atual da empresa (Simples Nacional ou Lucro Presumido)."
+    )
+    sector = serializers.ChoiceField(
+        choices=Company.Sector.choices, 
+        required=True,
+        label="Setor de Atuação",
+        help_text="Setor econômico da empresa."
+    )
+    state = serializers.ChoiceField(
+        choices=Company.UF.choices, 
+        required=False,
+        label="UF",
+        help_text="Unidade Federativa onde a empresa está sediada."
+    )
 
     def validate_monthly_revenue(self, value):
         if value <= 0:

@@ -1,6 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from drf_spectacular.utils import extend_schema
 from .serializers import SimulationInputSerializer
 from .services.calculator import TaxCalculator
 from .services.analyzer import ImpactAnalyzer
@@ -9,7 +10,14 @@ class SimulationView(APIView):
     """
     Endpoint para executar a simulação de impacto tributário com feedbacks detalhados.
     """
+    serializer_class = SimulationInputSerializer
     
+    @extend_schema(
+        summary="Executar Simulação Tributária",
+        description="Calcula o impacto da reforma tributária comparando a carga atual com a proposta (IBS/CBS) e fornece sugestões baseadas no setor.",
+        request=SimulationInputSerializer,
+        tags=['Simulação']
+    )
     def post(self, request, *args, **kwargs):
         serializer = SimulationInputSerializer(data=request.data)
         if serializer.is_valid():
