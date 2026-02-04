@@ -3,3 +3,6 @@ djangorestframework
 django-filter
 markdown
 drf-spectacular
+python-decouple
+dj-database-url
+gunicorn
