@@ -75,3 +75,16 @@ class SimulationAPITest(APITestCase):
         response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['resumo_entrada']['estado'], 'Não informado')
+
+    def test_costs_exceed_revenue(self):
+        url = reverse('simulate')
+        data = {
+            "monthly_revenue": 10000.00,
+            "costs": 15000.00, # Custos maiores que faturamento
+            "tax_regime": "SIMPLES_NACIONAL",
+            "sector": "SERVICOS"
+        }
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("costs", response.data)
+        self.assertIn("não podem ser maiores que o faturamento", str(response.data['costs']))
