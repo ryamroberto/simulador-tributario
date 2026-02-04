@@ -46,10 +46,24 @@ class SimulationInputSerializer(serializers.Serializer):
 
     def validate_monthly_revenue(self, value):
         if value <= 0:
-            raise serializers.ValidationError("O faturamento deve ser maior que zero.")
+            raise serializers.ValidationError("O faturamento deve ser um valor positivo.")
         return value
 
     def validate_costs(self, value):
         if value < 0:
             raise serializers.ValidationError("Os custos não podem ser negativos.")
         return value
+
+    def validate(self, data):
+        """
+        Validação cruzada entre campos.
+        """
+        revenue = data.get('monthly_revenue')
+        costs = data.get('costs')
+
+        if costs > revenue:
+            raise serializers.ValidationError({
+                "costs": "Os custos operacionais não podem ser maiores que o faturamento mensal nesta simulação simplificada."
+            })
+
+        return data
