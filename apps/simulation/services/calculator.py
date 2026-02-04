@@ -1,5 +1,7 @@
 from decimal import Decimal
 import logging
+from django.core.cache import cache
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -7,6 +9,7 @@ class TaxCalculator:
     """
     Serviço central para cálculo de impostos (Cenário Atual vs. Cenário Reforma).
     Busca alíquotas do banco de dados com fallback para valores fixos.
+    Utiliza camada de cache para otimização.
     """
 
     # Alíquotas para arredondamento (usadas na View)
@@ -24,13 +27,23 @@ class TaxCalculator:
     def get_rate(cls, rule_type):
         """
         Busca a alíquota ativa no banco de dados para o tipo de regime/reforma.
+        Utiliza cache para evitar consultas excessivas.
         """
+        cache_key = f"tax_rate_{rule_type}"
+        cached_rate = cache.get(cache_key)
+        
+        if cached_rate is not None:
+            return Decimal(str(cached_rate))
+
         from simulation.models import TaxRule # Import absoluto para evitar conflito de app_label
         
         try:
             rule = TaxRule.objects.filter(rule_type=rule_type, is_active=True).first()
             if rule:
-                return rule.rate
+                rate = rule.rate
+                # Salva no cache
+                cache.set(cache_key, float(rate), settings.CACHE_TTL)
+                return rate
         except Exception as e:
             logger.error(f"Erro ao buscar alíquota {rule_type} no banco: {e}")
         

@@ -127,6 +127,19 @@ USE_I18N = True
 USE_TZ = True
 
 
+# Caching
+# https://docs.djangoproject.com/en/6.0/topics/cache/
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+    }
+}
+
+# Cache TTL em segundos (Default: 24 horas)
+CACHE_TTL = config('CACHE_TTL', default=60 * 60 * 24, cast=int)
+
+
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 

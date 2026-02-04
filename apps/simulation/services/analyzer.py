@@ -1,5 +1,7 @@
 from decimal import Decimal
 import logging
+from django.core.cache import cache
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -7,13 +9,21 @@ class ImpactAnalyzer:
     """
     Serviço para analisar a diferença entre as cargas tributárias e fornecer insights qualitativos.
     Busca sugestões dinâmicas da Matriz de Sugestões no banco de dados.
+    Utiliza camada de cache para otimização.
     """
 
     @classmethod
     def get_suggestions(cls, sector, impact_classification):
         """
         Busca a lista de sugestões no banco de dados para o setor e classificação de impacto.
+        Utiliza cache para otimizar a performance.
         """
+        cache_key = f"suggestions_{sector}_{impact_classification}"
+        cached_suggestions = cache.get(cache_key)
+
+        if cached_suggestions is not None:
+            return cached_suggestions
+
         from simulation.models import SuggestionMatrix
         
         try:
@@ -23,7 +33,10 @@ class ImpactAnalyzer:
             ).values_list('suggestion_text', flat=True)
             
             if suggestions.exists():
-                return list(suggestions)
+                suggestion_list = list(suggestions)
+                # Salva no cache
+                cache.set(cache_key, suggestion_list, settings.CACHE_TTL)
+                return suggestion_list
         except Exception as e:
             logger.error(f"Erro ao buscar sugestões no banco: {e}")
         
