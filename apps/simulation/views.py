@@ -5,6 +5,7 @@ from drf_spectacular.utils import extend_schema
 from .serializers import SimulationInputSerializer
 from .services.calculator import TaxCalculator
 from .services.analyzer import ImpactAnalyzer
+from .models import SimulationLog
 
 class SimulationView(APIView):
     """
@@ -44,6 +45,20 @@ class SimulationView(APIView):
                 reform_tax, 
                 sector=data['sector'],
                 uf=data.get('state')
+            )
+
+            # Salvar Log de Simulação
+            SimulationLog.objects.create(
+                company_id=data.get('company_id'),
+                monthly_revenue=data['monthly_revenue'],
+                costs=data['costs'],
+                tax_regime=data['tax_regime'],
+                sector=data['sector'],
+                state=data.get('state'),
+                current_tax_load=current_tax,
+                reform_tax_load=reform_tax,
+                delta_value=analysis['delta_value'],
+                impact_classification=analysis['impact_classification']
             )
             
             # Montar Resposta em PT-BR

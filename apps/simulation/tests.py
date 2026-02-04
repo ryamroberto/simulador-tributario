@@ -98,3 +98,23 @@ class SimulationAPITest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("costs", response.data)
         self.assertIn("não podem ser maiores que o faturamento", str(response.data['costs']))
+
+    def test_simulation_log_creation(self):
+        from .models import SimulationLog
+        url = reverse('simulate')
+        data = {
+            "monthly_revenue": 10000.00,
+            "costs": 2000.00,
+            "tax_regime": "SIMPLES_NACIONAL",
+            "sector": "SERVICOS",
+            "state": "SP"
+        }
+        initial_count = SimulationLog.objects.count()
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(SimulationLog.objects.count(), initial_count + 1)
+        
+        log = SimulationLog.objects.last()
+        self.assertEqual(log.monthly_revenue, Decimal('10000.00'))
+        self.assertEqual(log.impact_classification, response.data['analise']['classificacao_impacto'])
+
