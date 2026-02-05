@@ -1,12 +1,16 @@
 from django.test import TestCase
 from decimal import Decimal
-from apps.simulation.services.calculator import TaxCalculator
-from apps.simulation.services.analyzer import ImpactAnalyzer
+from django.core.cache import cache
+from simulation.services.calculator import TaxCalculator
+from simulation.services.analyzer import ImpactAnalyzer
 from rest_framework.test import APITestCase
 from rest_framework import status
 from django.urls import reverse
 
 class TaxCalculatorTest(TestCase):
+    def setUp(self):
+        cache.clear()
+
     def test_calculate_simples_nacional(self):
         company_data = {'tax_regime': 'SIMPLES_NACIONAL'}
         financials = {'monthly_revenue': Decimal('10000.00')}
@@ -31,6 +35,9 @@ class TaxCalculatorTest(TestCase):
         self.assertEqual(tax, Decimal('2120.00'))
 
 class ImpactAnalyzerTest(TestCase):
+    def setUp(self):
+        cache.clear()
+
     def test_analyze_services_negative(self):
         analysis = ImpactAnalyzer.analyze(Decimal('1000.00'), Decimal('2000.00'), sector='SERVICOS')
         self.assertEqual(analysis['impact_classification'], 'NEGATIVO')
@@ -48,6 +55,9 @@ class ImpactAnalyzerTest(TestCase):
         self.assertIn("São Paulo", analysis['detalhes_setoriais'])
 
 class SimulationAPITest(APITestCase):
+    def setUp(self):
+        cache.clear()
+
     def test_simulation_endpoint_full(self):
         url = reverse('simulate')
         data = {
@@ -75,3 +85,106 @@ class SimulationAPITest(APITestCase):
         response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['resumo_entrada']['estado'], 'Não informado')
+
+    def test_costs_exceed_revenue(self):
+        url = reverse('simulate')
+        data = {
+            "monthly_revenue": 10000.00,
+            "costs": 15000.00, # Custos maiores que faturamento
+            "tax_regime": "SIMPLES_NACIONAL",
+            "sector": "SERVICOS"
+        }
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("costs", response.data)
+        self.assertIn("não podem ser maiores que o faturamento", str(response.data['costs']))
+
+    def test_simulation_log_creation(self):
+        from simulation.models import SimulationLog
+        url = reverse('simulate')
+        data = {
+            "monthly_revenue": 10000.00,
+            "costs": 2000.00,
+            "tax_regime": "SIMPLES_NACIONAL",
+            "sector": "SERVICOS",
+            "state": "SP"
+        }
+        initial_count = SimulationLog.objects.count()
+        response = self.client.post(url, data, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(SimulationLog.objects.count(), initial_count + 1)
+        
+        log = SimulationLog.objects.last()
+        self.assertEqual(log.monthly_revenue, Decimal('10000.00'))
+        self.assertEqual(log.impact_classification, response.data['analise']['classificacao_impacto'])
+
+class SimulationHistoryAPITest(APITestCase):
+    def setUp(self):
+        from simulation.models import SimulationLog
+        from companies.models import Company
+        cache.clear()
+        
+        # Criar empresa para teste de filtro
+        self.company = Company.objects.create(
+            name="Empresa Teste",
+            cnpj="12345678000199",
+            monthly_revenue=Decimal('10000.00'),
+            tax_regime="LUCRO_PRESUMIDO",
+            sector="SERVICOS",
+            state="SP"
+        )
+        
+        # Criar logs
+        SimulationLog.objects.create(
+            company=self.company,
+            monthly_revenue=Decimal('10000.00'),
+            costs=Decimal('2000.00'),
+            tax_regime='LUCRO_PRESUMIDO',
+            sector='SERVICOS',
+            state='SP',
+            current_tax_load=Decimal('1633.00'),
+            reform_tax_load=Decimal('2120.00'),
+            delta_value=Decimal('487.00'),
+            impact_classification='NEGATIVO'
+        )
+        
+        SimulationLog.objects.create(
+            company=None,
+            monthly_revenue=Decimal('50000.00'),
+            costs=Decimal('10000.00'),
+            tax_regime='SIMPLES_NACIONAL',
+            sector='COMERCIO',
+            state='RJ',
+            current_tax_load=Decimal('5000.00'),
+            reform_tax_load=Decimal('10600.00'),
+            delta_value=Decimal('5600.00'),
+            impact_classification='NEGATIVO'
+        )
+
+    def test_list_history(self):
+        url = reverse('simulation-history')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # response.data contém 'results' devido à paginação
+        data = response.data['results']
+        self.assertEqual(len(data), 2)
+        self.assertIn('regime_tributario_desc', data[0])
+        self.assertIn('data_criacao', data[0])
+
+    def test_filter_by_company(self):
+        url = reverse('simulation-history')
+        response = self.client.get(f"{url}?company={self.company.id}")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data['results']
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['company'], self.company.id)
+
+    def test_pt_br_descriptions(self):
+        url = reverse('simulation-history')
+        response = self.client.get(url)
+        data = response.data['results']
+        
+        # Encontrar o registro do Simples Nacional
+        simples_log = next(item for item in data if item['tax_regime'] == 'SIMPLES_NACIONAL')
+        self.assertEqual(simples_log['regime_tributario_desc'], 'Simples Nacional')
+        self.assertEqual(simples_log['impacto_desc'], 'Negativo')
