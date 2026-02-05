@@ -1,14 +1,16 @@
 from rest_framework.views import APIView
-from rest_framework.generics import ListAPIView
+from rest_framework.generics import ListAPIView, get_object_or_404
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Avg, Count
+from django.http import FileResponse
 from drf_spectacular.utils import extend_schema
 from .serializers import SimulationInputSerializer, SimulationLogListSerializer
 from .services.calculator import TaxCalculator
 from .services.analyzer import ImpactAnalyzer
+from .services.pdf_generator import PDFGenerator
 from .models import SimulationLog
 
 class StandardResultsSetPagination(PageNumberPagination):
@@ -165,3 +167,26 @@ class SimulationDashboardView(APIView):
         }
         
         return Response(data, status=status.HTTP_200_OK)
+
+class SimulationExportPDFView(APIView):
+    """
+    Endpoint para exportar uma simulação específica para PDF.
+    """
+    
+    @extend_schema(
+        summary="Exportar Simulação para PDF",
+        description="Gera e retorna um relatório PDF formatado para uma simulação específica.",
+        tags=['Simulação']
+    )
+    def get(self, request, pk, *args, **kwargs):
+        log = get_object_or_404(SimulationLog, pk=pk)
+        
+        # Gerar o PDF
+        pdf_buffer = PDFGenerator.generate_simulation_report(log)
+        
+        return FileResponse(
+            pdf_buffer,
+            as_attachment=True,
+            filename=f"relatorio_simulacao_{log.id}.pdf",
+            content_type='application/pdf'
+        )

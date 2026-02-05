@@ -249,3 +249,31 @@ class SimulationDashboardAPITest(APITestCase):
         self.assertEqual(data['top_setores'][0]['total'], 2)
         self.assertEqual(data['top_setores'][1]['setor'], 'COMERCIO')
         self.assertEqual(data['top_setores'][1]['total'], 1)
+
+class SimulationExportAPITest(APITestCase):
+    def setUp(self):
+        from simulation.models import SimulationLog
+        cache.clear()
+        
+        self.log = SimulationLog.objects.create(
+            monthly_revenue=Decimal('10000.00'),
+            costs=Decimal('5000.00'),
+            tax_regime='LUCRO_PRESUMIDO',
+            sector='SERVICOS',
+            current_tax_load=Decimal('1633.00'),
+            reform_tax_load=Decimal('1325.00'),
+            delta_value=Decimal('-308.00'),
+            impact_classification='POSITIVO'
+        )
+
+    def test_export_pdf_endpoint(self):
+        url = reverse('simulation-export-pdf', kwargs={'pk': self.log.pk})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertIn('attachment', response['Content-Disposition'])
+        self.assertIn(f'relatorio_simulacao_{self.log.id}.pdf', response['Content-Disposition'])
+        
+        # Para FileResponse, verificamos se há conteúdo no stream
+        content = b"".join(response.streaming_content)
+        self.assertTrue(len(content) > 0)

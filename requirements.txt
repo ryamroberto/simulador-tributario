@@ -6,4 +6,5 @@ drf-spectacular
 python-decouple
 dj-database-url
 gunicorn
+reportlab
 ruff
