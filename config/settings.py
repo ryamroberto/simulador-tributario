@@ -13,6 +13,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from pathlib import Path
 import sys
 import os
+from decouple import config
+import dj_database_url
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -24,12 +26,12 @@ sys.path.insert(0, os.path.join(BASE_DIR, 'apps'))
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-+1*q1@&28i*r=u#i3lst)lf&cm9is3j6l9u(*=sg1ojndb$x#8'
+SECRET_KEY = config('SECRET_KEY', default='django-insecure-+1*q1@&28i*r=u#i3lst)lf&cm9is3j6l9u(*=sg1ojndb$x#8')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=lambda v: [s.strip() for s in v.split(',')])
 
 
 # Application definition
@@ -44,6 +46,7 @@ INSTALLED_APPS = [
 
     # Third party apps
     'rest_framework',
+    'drf_spectacular',
 
     # Local apps
     'core',
@@ -85,10 +88,11 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': config(
+        'DATABASE_URL',
+        default=f'sqlite:///{BASE_DIR / "db.sqlite3"}',
+        cast=dj_database_url.parse
+    )
 }
 
 
@@ -123,7 +127,37 @@ USE_I18N = True
 USE_TZ = True
 
 
+# Caching
+# https://docs.djangoproject.com/en/6.0/topics/cache/
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
+    }
+}
+
+# Cache TTL em segundos (Default: 24 horas)
+CACHE_TTL = config('CACHE_TTL', default=60 * 60 * 24, cast=int)
+
+
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# Default primary key field type
+# https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+REST_FRAMEWORK = {
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'API Simulador Tributário',
+    'DESCRIPTION': 'API para simulação de impacto da reforma tributária (IBS/CBS) em comparação com regimes atuais (Simples Nacional, Lucro Presumido).',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'LANGUAGE': 'pt-br',
+}
