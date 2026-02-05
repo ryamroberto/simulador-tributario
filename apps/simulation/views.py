@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from django_filters.rest_framework import DjangoFilterBackend
+from django.db.models import Avg, Count
 from drf_spectacular.utils import extend_schema
 from .serializers import SimulationInputSerializer, SimulationLogListSerializer
 from .services.calculator import TaxCalculator
@@ -114,3 +115,53 @@ class SimulationHistoryView(ListAPIView):
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
+
+class SimulationDashboardView(APIView):
+    """
+    Endpoint que fornece métricas consolidadas do histórico de simulações.
+    """
+    
+    @extend_schema(
+        summary="Obter Métricas do Dashboard",
+        description="Retorna estatísticas agregadas de todas as simulações realizadas para análise macro.",
+        tags=['Simulação']
+    )
+    def get(self, request, *args, **kwargs):
+        # Agregações básicas
+        aggregates = SimulationLog.objects.aggregate(
+            total=Count('id'),
+            faturamento_medio=Avg('monthly_revenue'),
+            carga_atual_media=Avg('current_tax_load'),
+            carga_reforma_media=Avg('reform_tax_load')
+        )
+        
+        # Distribuição de impacto
+        impact_dist = SimulationLog.objects.values('impact_classification').annotate(
+            total=Count('id')
+        ).order_by('-total')
+        
+        # Top 3 setores
+        top_setores = SimulationLog.objects.values('sector').annotate(
+            total=Count('id')
+        ).order_by('-total')[:3]
+        
+        # Formatando resposta
+        data = {
+            "total_simulacoes": aggregates['total'] or 0,
+            "faturamento_medio": round(aggregates['faturamento_medio'] or 0, 2),
+            "comparativo_carga_media": {
+                "carga_atual_media": round(aggregates['carga_atual_media'] or 0, 2),
+                "carga_reforma_media": round(aggregates['carga_reforma_media'] or 0, 2)
+            },
+            "distribuicao_impacto": {
+                item['impact_classification']: item['total'] for item in impact_dist
+            },
+            "top_setores": [
+                {
+                    "setor": item['sector'],
+                    "total": item['total']
+                } for item in top_setores
+            ]
+        }
+        
+        return Response(data, status=status.HTTP_200_OK)

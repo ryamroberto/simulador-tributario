@@ -188,3 +188,64 @@ class SimulationHistoryAPITest(APITestCase):
         simples_log = next(item for item in data if item['tax_regime'] == 'SIMPLES_NACIONAL')
         self.assertEqual(simples_log['regime_tributario_desc'], 'Simples Nacional')
         self.assertEqual(simples_log['impacto_desc'], 'Negativo')
+
+class SimulationDashboardAPITest(APITestCase):
+    def setUp(self):
+        from simulation.models import SimulationLog
+        cache.clear()
+        
+        # Criar massa de dados variada
+        # Registro 1: Serviços, Positivo
+        SimulationLog.objects.create(
+            monthly_revenue=Decimal('10000.00'),
+            costs=Decimal('5000.00'),
+            tax_regime='LUCRO_PRESUMIDO',
+            sector='SERVICOS',
+            current_tax_load=Decimal('1633.00'),
+            reform_tax_load=Decimal('1325.00'),
+            delta_value=Decimal('-308.00'),
+            impact_classification='POSITIVO'
+        )
+        # Registro 2: Serviços, Negativo
+        SimulationLog.objects.create(
+            monthly_revenue=Decimal('20000.00'),
+            costs=Decimal('2000.00'),
+            tax_regime='SIMPLES_NACIONAL',
+            sector='SERVICOS',
+            current_tax_load=Decimal('2000.00'),
+            reform_tax_load=Decimal('4770.00'),
+            delta_value=Decimal('2770.00'),
+            impact_classification='NEGATIVO'
+        )
+        # Registro 3: Comércio, Neutro
+        SimulationLog.objects.create(
+            monthly_revenue=Decimal('30000.00'),
+            costs=Decimal('10000.00'),
+            tax_regime='LUCRO_PRESUMIDO',
+            sector='COMERCIO',
+            current_tax_load=Decimal('4899.00'),
+            reform_tax_load=Decimal('4899.00'),
+            delta_value=Decimal('0.00'),
+            impact_classification='NEUTRO'
+        )
+
+    def test_dashboard_metrics(self):
+        url = reverse('simulation-dashboard')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        data = response.data
+        self.assertEqual(data['total_simulacoes'], 3)
+        # Média faturamento: (10k + 20k + 30k) / 3 = 20k
+        self.assertEqual(Decimal(str(data['faturamento_medio'])), Decimal('20000.00'))
+        
+        # Distribuição impacto
+        self.assertEqual(data['distribuicao_impacto']['POSITIVO'], 1)
+        self.assertEqual(data['distribuicao_impacto']['NEGATIVO'], 1)
+        self.assertEqual(data['distribuicao_impacto']['NEUTRO'], 1)
+        
+        # Top setores
+        self.assertEqual(data['top_setores'][0]['setor'], 'SERVICOS')
+        self.assertEqual(data['top_setores'][0]['total'], 2)
+        self.assertEqual(data['top_setores'][1]['setor'], 'COMERCIO')
+        self.assertEqual(data['top_setores'][1]['total'], 1)
