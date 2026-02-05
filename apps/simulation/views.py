@@ -1,11 +1,19 @@
 from rest_framework.views import APIView
+from rest_framework.generics import ListAPIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.pagination import PageNumberPagination
+from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema
-from .serializers import SimulationInputSerializer
+from .serializers import SimulationInputSerializer, SimulationLogListSerializer
 from .services.calculator import TaxCalculator
 from .services.analyzer import ImpactAnalyzer
 from .models import SimulationLog
+
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
 class SimulationView(APIView):
     """
@@ -87,3 +95,22 @@ class SimulationView(APIView):
             return Response(response_data, status=status.HTTP_200_OK)
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class SimulationHistoryView(ListAPIView):
+    """
+    Endpoint para listar o histórico de simulações realizadas.
+    Permite filtrar por empresa e retorna os dados paginados.
+    """
+    queryset = SimulationLog.objects.all()
+    serializer_class = SimulationLogListSerializer
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['company']
+
+    @extend_schema(
+        summary="Listar Histórico de Simulações",
+        description="Retorna uma lista paginada de todas as simulações gravadas no sistema. Pode ser filtrado por ID da empresa.",
+        tags=['Simulação']
+    )
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from companies.models import Company
+from .models import SimulationLog
 
 class SimulationInputSerializer(serializers.Serializer):
     """
@@ -67,3 +68,34 @@ class SimulationInputSerializer(serializers.Serializer):
             })
 
         return data
+
+
+class SimulationLogListSerializer(serializers.ModelSerializer):
+    """
+    Serializer para listagem amigável do histórico de simulações.
+    """
+    regime_tributario_desc = serializers.CharField(source='get_tax_regime_display', read_only=True)
+    setor_desc = serializers.CharField(source='get_sector_display', read_only=True)
+    impacto_desc = serializers.CharField(source='get_impact_classification_display', read_only=True)
+    data_criacao = serializers.DateTimeField(source='created_at', format="%d/%m/%Y %H:%M", read_only=True)
+
+    class Meta:
+        model = SimulationLog
+        fields = [
+            'id',
+            'company',
+            'monthly_revenue',
+            'costs',
+            'tax_regime',
+            'regime_tributario_desc',
+            'sector',
+            'setor_desc',
+            'state',
+            'current_tax_load',
+            'reform_tax_load',
+            'delta_value',
+            'impact_classification',
+            'impacto_desc',
+            'data_criacao'
+        ]
+        read_only_fields = fields
