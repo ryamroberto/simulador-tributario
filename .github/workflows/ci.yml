@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      # Se precisarmos de um banco de dados real no futuro (ex: postgres), adicionaríamos aqui.
+      # Para SQLite, não é necessário serviço adicional.
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: db
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+        ports:
+          - 5432:5432
+        # Health check para garantir que o postgres está pronto
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip' # caching pip dependencies
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run Linter (Ruff)
+      run: |
+        ruff check .
+
+    - name: Run Tests
+      env:
+        DEBUG: False
+        SECRET_KEY: "test-secret-key-for-ci"
+        ALLOWED_HOSTS: "localhost,127.0.0.1"
+        DATABASE_URL: "postgres://user:password@localhost:5432/db"
+      run: |
+        python manage.py test companies simulation
