@@ -1,18 +1,24 @@
 from rest_framework.views import APIView
+from rest_framework import viewsets
 from rest_framework.generics import ListAPIView, get_object_or_404
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Avg, Count
 from django.http import FileResponse
-from drf_spectacular.utils import extend_schema
-from .serializers import SimulationInputSerializer, SimulationLogListSerializer
+from drf_spectacular.utils import extend_schema, extend_schema_view
+from .serializers import (
+    SimulationInputSerializer, 
+    SimulationLogListSerializer,
+    TaxRuleSerializer,
+    SuggestionMatrixSerializer
+)
 from .services.calculator import TaxCalculator
 from .services.analyzer import ImpactAnalyzer
 from .services.pdf_generator import PDFGenerator
-from .models import SimulationLog
+from .models import SimulationLog, TaxRule, SuggestionMatrix
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 10
@@ -182,7 +188,6 @@ class SimulationExportPDFView(APIView):
         tags=['Simulações']
     )
     def get(self, request, pk, *args, **kwargs):
-        # get_object_or_404 com filtro de usuário garante segurança
         log = get_object_or_404(SimulationLog, pk=pk, user=request.user)
         pdf_buffer = PDFGenerator.generate_simulation_report(log)
         
@@ -192,3 +197,38 @@ class SimulationExportPDFView(APIView):
             filename=f"relatorio_simulacao_{log.id}.pdf",
             content_type='application/pdf'
         )
+
+# --- Gestão Administrativa ---
+
+@extend_schema_view(
+    list=extend_schema(summary="Listar Regras Tributárias", tags=['Gestão']),
+    create=extend_schema(summary="Criar Regra Tributária", tags=['Gestão']),
+    retrieve=extend_schema(summary="Obter Detalhe de Regra", tags=['Gestão']),
+    update=extend_schema(summary="Atualizar Regra", tags=['Gestão']),
+    partial_update=extend_schema(summary="Atualizar Regra (Parcial)", tags=['Gestão']),
+    destroy=extend_schema(summary="Remover Regra", tags=['Gestão']),
+)
+class TaxRuleViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para gestão de regras tributárias. Acesso restrito a administradores.
+    """
+    queryset = TaxRule.objects.all()
+    serializer_class = TaxRuleSerializer
+    permission_classes = [IsAdminUser]
+
+
+@extend_schema_view(
+    list=extend_schema(summary="Listar Matriz de Sugestões", tags=['Gestão']),
+    create=extend_schema(summary="Criar Sugestão", tags=['Gestão']),
+    retrieve=extend_schema(summary="Obter Detalhe de Sugestão", tags=['Gestão']),
+    update=extend_schema(summary="Atualizar Sugestão", tags=['Gestão']),
+    partial_update=extend_schema(summary="Atualizar Sugestão (Parcial)", tags=['Gestão']),
+    destroy=extend_schema(summary="Remover Sugestão", tags=['Gestão']),
+)
+class SuggestionMatrixViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet para gestão da matriz de sugestões. Acesso restrito a administradores.
+    """
+    queryset = SuggestionMatrix.objects.all()
+    serializer_class = SuggestionMatrixSerializer
+    permission_classes = [IsAdminUser]

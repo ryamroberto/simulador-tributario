@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from companies.models import Company
-from .models import SimulationLog
+from .models import SimulationLog, TaxRule, SuggestionMatrix
 from drf_spectacular.utils import extend_schema_field
 
 class SimulationInputSerializer(serializers.Serializer):
@@ -49,7 +49,6 @@ class SimulationInputSerializer(serializers.Serializer):
     )
 
     class Meta:
-        # Exemplo global para o schema
         swagger_schema_fields = {
             "example": {
                 "monthly_revenue": 50000.00,
@@ -109,3 +108,21 @@ class SimulationLogListSerializer(serializers.ModelSerializer):
             'data_criacao'
         ]
         read_only_fields = fields
+
+
+class TaxRuleSerializer(serializers.ModelSerializer):
+    """
+    Serializer para gestão administrativa de regras tributárias.
+    """
+    class Meta:
+        model = TaxRule
+        fields = '__all__'
+
+
+class SuggestionMatrixSerializer(serializers.ModelSerializer):
+    """
+    Serializer para gestão administrativa da matriz de sugestões.
+    """
+    class Meta:
+        model = SuggestionMatrix
+        fields = '__all__'
