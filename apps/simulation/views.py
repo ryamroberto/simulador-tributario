@@ -3,6 +3,7 @@ from rest_framework.generics import ListAPIView, get_object_or_404
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Avg, Count
 from django.http import FileResponse
@@ -23,6 +24,7 @@ class SimulationView(APIView):
     Endpoint para executar a simulação de impacto tributário com feedbacks detalhados.
     """
     serializer_class = SimulationInputSerializer
+    permission_classes = [IsAuthenticated]
     
     @extend_schema(
         summary="Executar Simulação Tributária",
@@ -107,6 +109,7 @@ class SimulationHistoryView(ListAPIView):
     queryset = SimulationLog.objects.all()
     serializer_class = SimulationLogListSerializer
     pagination_class = StandardResultsSetPagination
+    permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['company']
 
@@ -122,6 +125,7 @@ class SimulationDashboardView(APIView):
     """
     Endpoint que fornece métricas consolidadas do histórico de simulações.
     """
+    permission_classes = [IsAuthenticated]
     
     @extend_schema(
         summary="Obter Métricas do Dashboard",
@@ -172,6 +176,7 @@ class SimulationExportPDFView(APIView):
     """
     Endpoint para exportar uma simulação específica para PDF.
     """
+    permission_classes = [IsAuthenticated]
     
     @extend_schema(
         summary="Exportar Simulação para PDF",
