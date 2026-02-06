@@ -27,12 +27,13 @@ class SimulationView(APIView):
     permission_classes = [IsAuthenticated]
     
     @extend_schema(
-        summary="Executar Simulação Tributária",
-        description="Calcula o impacto da reforma tributária comparando a carga atual com a proposta (IBS/CBS) e fornece sugestões baseadas no setor.",
+        summary="Executar Simulação",
+        description="Calcula o impacto da reforma tributária comparando a carga atual com a proposta (IBS/CBS) e fornece sugestões baseadas no setor econômico e UF informada.",
         request=SimulationInputSerializer,
-        tags=['Simulação']
+        tags=['Simulações']
     )
     def post(self, request, *args, **kwargs):
+        # ... (implementation remains same)
         serializer = SimulationInputSerializer(data=request.data)
         if serializer.is_valid():
             data = serializer.validated_data
@@ -104,7 +105,6 @@ class SimulationView(APIView):
 class SimulationHistoryView(ListAPIView):
     """
     Endpoint para listar o histórico de simulações realizadas.
-    Permite filtrar por empresa e retorna os dados paginados.
     """
     queryset = SimulationLog.objects.all()
     serializer_class = SimulationLogListSerializer
@@ -114,9 +114,9 @@ class SimulationHistoryView(ListAPIView):
     filterset_fields = ['company']
 
     @extend_schema(
-        summary="Listar Histórico de Simulações",
-        description="Retorna uma lista paginada de todas as simulações gravadas no sistema. Pode ser filtrado por ID da empresa.",
-        tags=['Simulação']
+        summary="Listar Histórico",
+        description="Retorna uma lista paginada de todas as simulações gravadas no sistema. Permite filtragem por ID de empresa.",
+        tags=['Simulações']
     )
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
@@ -128,12 +128,12 @@ class SimulationDashboardView(APIView):
     permission_classes = [IsAuthenticated]
     
     @extend_schema(
-        summary="Obter Métricas do Dashboard",
-        description="Retorna estatísticas agregadas de todas as simulações realizadas para análise macro.",
-        tags=['Simulação']
+        summary="Obter Dashboard de Métricas",
+        description="Retorna estatísticas agregadas (médias, contagens e distribuições) de todas as simulações realizadas para análise macro de mercado.",
+        tags=['Simulações']
     )
     def get(self, request, *args, **kwargs):
-        # Agregações básicas
+        # ... (implementation remains same)
         aggregates = SimulationLog.objects.aggregate(
             total=Count('id'),
             faturamento_medio=Avg('monthly_revenue'),
@@ -141,17 +141,14 @@ class SimulationDashboardView(APIView):
             carga_reforma_media=Avg('reform_tax_load')
         )
         
-        # Distribuição de impacto
         impact_dist = SimulationLog.objects.values('impact_classification').annotate(
             total=Count('id')
         ).order_by('-total')
         
-        # Top 3 setores
         top_setores = SimulationLog.objects.values('sector').annotate(
             total=Count('id')
         ).order_by('-total')[:3]
         
-        # Formatando resposta
         data = {
             "total_simulacoes": aggregates['total'] or 0,
             "faturamento_medio": round(aggregates['faturamento_medio'] or 0, 2),
@@ -179,14 +176,12 @@ class SimulationExportPDFView(APIView):
     permission_classes = [IsAuthenticated]
     
     @extend_schema(
-        summary="Exportar Simulação para PDF",
-        description="Gera e retorna um relatório PDF formatado para uma simulação específica.",
-        tags=['Simulação']
+        summary="Exportar para PDF",
+        description="Gera e retorna um relatório oficial em formato PDF para uma simulação específica identificada pelo ID.",
+        tags=['Simulações']
     )
     def get(self, request, pk, *args, **kwargs):
         log = get_object_or_404(SimulationLog, pk=pk)
-        
-        # Gerar o PDF
         pdf_buffer = PDFGenerator.generate_simulation_report(log)
         
         return FileResponse(

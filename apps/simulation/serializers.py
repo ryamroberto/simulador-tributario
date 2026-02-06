@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from companies.models import Company
 from .models import SimulationLog
+from drf_spectacular.utils import extend_schema_field
 
 class SimulationInputSerializer(serializers.Serializer):
     """
@@ -17,14 +18,16 @@ class SimulationInputSerializer(serializers.Serializer):
         decimal_places=2, 
         required=True,
         label="Faturamento Mensal",
-        help_text="Faturamento bruto mensal da empresa."
+        help_text="Faturamento bruto mensal da empresa.",
+        initial=10000.00
     )
     costs = serializers.DecimalField(
         max_digits=15, 
         decimal_places=2, 
         required=True,
         label="Custos Mensais",
-        help_text="Custos operacionais mensais dedutíveis."
+        help_text="Custos operacionais mensais dedutíveis.",
+        initial=2000.00
     )
     tax_regime = serializers.ChoiceField(
         choices=Company.TaxRegime.choices, 
@@ -45,6 +48,18 @@ class SimulationInputSerializer(serializers.Serializer):
         help_text="Unidade Federativa onde a empresa está sediada."
     )
 
+    class Meta:
+        # Exemplo global para o schema
+        swagger_schema_fields = {
+            "example": {
+                "monthly_revenue": 50000.00,
+                "costs": 15000.00,
+                "tax_regime": "LUCRO_PRESUMIDO",
+                "sector": "SERVICOS",
+                "state": "SP"
+            }
+        }
+
     def validate_monthly_revenue(self, value):
         if value <= 0:
             raise serializers.ValidationError("O faturamento deve ser um valor positivo.")
@@ -56,17 +71,12 @@ class SimulationInputSerializer(serializers.Serializer):
         return value
 
     def validate(self, data):
-        """
-        Validação cruzada entre campos.
-        """
         revenue = data.get('monthly_revenue')
         costs = data.get('costs')
-
-        if costs > revenue:
+        if revenue and costs and costs > revenue:
             raise serializers.ValidationError({
                 "costs": "Os custos operacionais não podem ser maiores que o faturamento mensal nesta simulação simplificada."
             })
-
         return data
 
 

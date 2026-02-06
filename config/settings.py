@@ -196,6 +196,13 @@ SPECTACULAR_SETTINGS = {
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
     'LANGUAGE': 'pt-br',
+    'CONTACT': {
+        'name': 'Suporte Técnico',
+        'email': 'suporte@simulador.com.br',
+    },
+    'LICENSE': {
+        'name': 'MIT',
+    },
     'COMPONENT_SPLIT_REQUEST': True,
     'SECURITY': [{
         'bearerAuth': [],
