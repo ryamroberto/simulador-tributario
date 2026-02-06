@@ -21,19 +21,18 @@ class StandardResultsSetPagination(PageNumberPagination):
 
 class SimulationView(APIView):
     """
-    Endpoint para executar a simulação de impacto tributário com feedbacks detalhados.
+    Endpoint para executar a simulação de impacto tributário vinculada ao usuário.
     """
     serializer_class = SimulationInputSerializer
     permission_classes = [IsAuthenticated]
     
     @extend_schema(
         summary="Executar Simulação",
-        description="Calcula o impacto da reforma tributária comparando a carga atual com a proposta (IBS/CBS) e fornece sugestões baseadas no setor econômico e UF informada.",
+        description="Calcula o impacto da reforma tributária e salva um log vinculado ao seu usuário.",
         request=SimulationInputSerializer,
         tags=['Simulações']
     )
     def post(self, request, *args, **kwargs):
-        # ... (implementation remains same)
         serializer = SimulationInputSerializer(data=request.data)
         if serializer.is_valid():
             data = serializer.validated_data
@@ -53,7 +52,7 @@ class SimulationView(APIView):
             current_tax = TaxCalculator.calculate_current_tax(company_data, financials)
             reform_tax = TaxCalculator.calculate_reform_tax(company_data, financials)
             
-            # Analisar Impacto com sugestões dinâmicas
+            # Analisar Impacto
             analysis = ImpactAnalyzer.analyze(
                 current_tax, 
                 reform_tax, 
@@ -61,8 +60,9 @@ class SimulationView(APIView):
                 uf=data.get('state')
             )
 
-            # Salvar Log de Simulação
+            # Salvar Log vinculado ao usuário
             SimulationLog.objects.create(
+                user=request.user,
                 company_id=data.get('company_id'),
                 monthly_revenue=data['monthly_revenue'],
                 costs=data['costs'],
@@ -75,7 +75,7 @@ class SimulationView(APIView):
                 impact_classification=analysis['impact_classification']
             )
             
-            # Montar Resposta em PT-BR
+            # Resposta
             response_data = {
                 'resumo_entrada': {
                     'faturamento': data['monthly_revenue'],
@@ -97,25 +97,25 @@ class SimulationView(APIView):
                     'sugestoes': analysis['suggestions']
                 }
             }
-            
             return Response(response_data, status=status.HTTP_200_OK)
-        
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class SimulationHistoryView(ListAPIView):
     """
-    Endpoint para listar o histórico de simulações realizadas.
+    Endpoint para listar apenas o histórico do usuário autenticado.
     """
-    queryset = SimulationLog.objects.all()
     serializer_class = SimulationLogListSerializer
     pagination_class = StandardResultsSetPagination
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend]
     filterset_fields = ['company']
 
+    def get_queryset(self):
+        return SimulationLog.objects.filter(user=self.request.user)
+
     @extend_schema(
         summary="Listar Histórico",
-        description="Retorna uma lista paginada de todas as simulações gravadas no sistema. Permite filtragem por ID de empresa.",
+        description="Retorna o seu histórico pessoal de simulações.",
         tags=['Simulações']
     )
     def get(self, request, *args, **kwargs):
@@ -123,29 +123,31 @@ class SimulationHistoryView(ListAPIView):
 
 class SimulationDashboardView(APIView):
     """
-    Endpoint que fornece métricas consolidadas do histórico de simulações.
+    Endpoint que fornece métricas baseadas apenas nos logs do usuário.
     """
     permission_classes = [IsAuthenticated]
     
     @extend_schema(
         summary="Obter Dashboard de Métricas",
-        description="Retorna estatísticas agregadas (médias, contagens e distribuições) de todas as simulações realizadas para análise macro de mercado.",
+        description="Retorna estatísticas baseadas exclusivamente nas suas simulações.",
         tags=['Simulações']
     )
     def get(self, request, *args, **kwargs):
-        # ... (implementation remains same)
-        aggregates = SimulationLog.objects.aggregate(
+        # Filtro por usuário nas agregações
+        user_logs = SimulationLog.objects.filter(user=request.user)
+        
+        aggregates = user_logs.aggregate(
             total=Count('id'),
             faturamento_medio=Avg('monthly_revenue'),
             carga_atual_media=Avg('current_tax_load'),
             carga_reforma_media=Avg('reform_tax_load')
         )
         
-        impact_dist = SimulationLog.objects.values('impact_classification').annotate(
+        impact_dist = user_logs.values('impact_classification').annotate(
             total=Count('id')
         ).order_by('-total')
         
-        top_setores = SimulationLog.objects.values('sector').annotate(
+        top_setores = user_logs.values('sector').annotate(
             total=Count('id')
         ).order_by('-total')[:3]
         
@@ -166,22 +168,22 @@ class SimulationDashboardView(APIView):
                 } for item in top_setores
             ]
         }
-        
         return Response(data, status=status.HTTP_200_OK)
 
 class SimulationExportPDFView(APIView):
     """
-    Endpoint para exportar uma simulação específica para PDF.
+    Endpoint para exportar uma simulação própria para PDF.
     """
     permission_classes = [IsAuthenticated]
     
     @extend_schema(
         summary="Exportar para PDF",
-        description="Gera e retorna um relatório oficial em formato PDF para uma simulação específica identificada pelo ID.",
+        description="Gera um PDF para uma simulação sua.",
         tags=['Simulações']
     )
     def get(self, request, pk, *args, **kwargs):
-        log = get_object_or_404(SimulationLog, pk=pk)
+        # get_object_or_404 com filtro de usuário garante segurança
+        log = get_object_or_404(SimulationLog, pk=pk, user=request.user)
         pdf_buffer = PDFGenerator.generate_simulation_report(log)
         
         return FileResponse(

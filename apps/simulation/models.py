@@ -1,4 +1,5 @@
 from django.db import models
+from django.contrib.auth.models import User
 from core.models import TimeStampedModel
 from companies.models import Company
 
@@ -60,7 +61,17 @@ class SuggestionMatrix(TimeStampedModel):
 
 
 class SimulationLog(TimeStampedModel):
-    # Relacionamento Opcional
+    # Propriedade
+    user = models.ForeignKey(
+        User, 
+        on_delete=models.CASCADE, 
+        null=True, 
+        blank=True, 
+        verbose_name="Usuário",
+        related_name="simulation_logs"
+    )
+    
+    # Relacionamento Opcional com Empresa
     company = models.ForeignKey(
         Company, 
         on_delete=models.SET_NULL, 

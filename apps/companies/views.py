@@ -1,4 +1,5 @@
 from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated
 from drf_spectacular.utils import extend_schema_view, extend_schema
 from .models import Company
 from .serializers import CompanySerializer
@@ -13,7 +14,19 @@ from .serializers import CompanySerializer
 )
 class CompanyViewSet(viewsets.ModelViewSet):
     """
-    ViewSet para operações de CRUD em Empresas.
+    ViewSet para operações de CRUD em Empresas vinculadas ao usuário.
     """
-    queryset = Company.objects.all().order_by('-created_at')
     serializer_class = CompanySerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        """
+        Retorna apenas as empresas que pertencem ao usuário autenticado.
+        """
+        return Company.objects.filter(user=self.request.user).order_by('-created_at')
+
+    def perform_create(self, serializer):
+        """
+        Define o usuário autenticado como dono da empresa ao cadastrar.
+        """
+        serializer.save(user=self.request.user)

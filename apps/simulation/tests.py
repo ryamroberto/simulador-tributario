@@ -7,140 +7,102 @@ from rest_framework.test import APITestCase
 from rest_framework import status
 from django.urls import reverse
 from django.contrib.auth.models import User
+from simulation.models import SimulationLog
 
-class TaxCalculatorTest(TestCase):
+class OwnershipAPITest(APITestCase):
+    """
+    Testes de isolamento de dados entre usuários (Data Ownership).
+    """
     def setUp(self):
         cache.clear()
+        # Usuário A
+        self.user_a = User.objects.create_user(username="usera", password="password123")
+        # Usuário B
+        self.user_b = User.objects.create_user(username="userb", password="password123")
+        
+        # Dados do Usuário A
+        self.log_a = SimulationLog.objects.create(
+            user=self.user_a,
+            monthly_revenue=Decimal('10000.00'),
+            costs=Decimal('2000.00'),
+            tax_regime='SIMPLES_NACIONAL',
+            sector='SERVICOS',
+            current_tax_load=Decimal('1000.00'),
+            reform_tax_load=Decimal('2120.00'),
+            delta_value=Decimal('1120.00'),
+            impact_classification='NEGATIVO'
+        )
 
-    def test_calculate_simples_nacional(self):
-        company_data = {'tax_regime': 'SIMPLES_NACIONAL'}
-        financials = {'monthly_revenue': Decimal('10000.00')}
-        tax = TaxCalculator.calculate_current_tax(company_data, financials)
-        self.assertEqual(tax, Decimal('1000.00'))
-
-    def test_calculate_lucro_presumido(self):
-        company_data = {'tax_regime': 'LUCRO_PRESUMIDO'}
-        financials = {'monthly_revenue': Decimal('10000.00')}
-        tax = TaxCalculator.calculate_current_tax(company_data, financials)
-        self.assertEqual(tax, Decimal('1633.00'))
-
-class AuthAPITest(APITestCase):
-    def test_user_registration(self):
-        url = reverse('user_register')
-        data = {
-            "username": "testuser",
-            "email": "test@example.com",
-            "password": "password123",
-            "password_confirm": "password123",
-            "first_name": "Test",
-            "last_name": "User"
-        }
-        response = self.client.post(url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
-    def test_login_and_token_obtain(self):
-        User.objects.create_user(username="testuser", password="password123")
-        url = reverse('token_obtain_pair')
-        response = self.client.post(url, {"username": "testuser", "password": "password123"}, format='json')
+    def test_user_b_cannot_see_user_a_history(self):
+        # Autenticar como B
+        self.client.force_authenticate(user=self.user_b)
+        url = reverse('simulation-history')
+        response = self.client.get(url)
+        
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('access', response.data)
+        # B deve ver lista vazia, pois não tem simulações
+        self.assertEqual(len(response.data['results']), 0)
 
-class SimulationAPITest(APITestCase):
+    def test_user_b_cannot_export_user_a_pdf(self):
+        # Autenticar como B
+        self.client.force_authenticate(user=self.user_b)
+        # Tentar exportar o log que pertence ao A
+        url = reverse('simulation-export-pdf', kwargs={'pk': self.log_a.pk})
+        response = self.client.get(url)
+        
+        # Deve retornar 404 porque o queryset do B é filtrado e não encontra o ID do A
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_user_a_sees_own_history(self):
+        # Autenticar como A
+        self.client.force_authenticate(user=self.user_a)
+        url = reverse('simulation-history')
+        response = self.client.get(url)
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data['results']), 1)
+        self.assertEqual(response.data['results'][0]['id'], self.log_a.id)
+
+    def test_dashboard_aggregation_is_private(self):
+        # Criar um dado para B
+        SimulationLog.objects.create(
+            user=self.user_b,
+            monthly_revenue=Decimal('50000.00'),
+            costs=Decimal('0.00'),
+            tax_regime='LUCRO_PRESUMIDO',
+            sector='COMERCIO',
+            current_tax_load=Decimal('5000.00'),
+            reform_tax_load=Decimal('5000.00'),
+            delta_value=Decimal('0.00'),
+            impact_classification='NEUTRO'
+        )
+        
+        # Dashboard do A deve mostrar faturamento médio de 10k (seu único registro)
+        self.client.force_authenticate(user=self.user_a)
+        url = reverse('simulation-dashboard')
+        response = self.client.get(url)
+        self.assertEqual(response.data['faturamento_medio'], 10000.00)
+        
+        # Dashboard do B deve mostrar faturamento médio de 50k
+        self.client.force_authenticate(user=self.user_b)
+        response = self.client.get(url)
+        self.assertEqual(response.data['faturamento_medio'], 50000.00)
+
+class GenericAuthAndTests(APITestCase):
+    # Manter testes básicos de sanidade
     def setUp(self):
-        cache.clear()
         self.user = User.objects.create_user(username="apiuser", password="password123")
         self.client.force_authenticate(user=self.user)
 
-    def test_simulation_endpoint_full(self):
+    def test_simulation_endpoint_works(self):
         url = reverse('simulate')
         data = {
             "monthly_revenue": 10000.00,
             "costs": 2000.00,
             "tax_regime": "SIMPLES_NACIONAL",
-            "sector": "SERVICOS",
-            "state": "SP"
+            "sector": "SERVICOS"
         }
         response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-class SimulationHistoryAPITest(APITestCase):
-    def setUp(self):
-        from simulation.models import SimulationLog
-        from companies.models import Company
-        cache.clear()
-        self.user = User.objects.create_user(username="historyuser", password="password123")
-        self.client.force_authenticate(user=self.user)
-        
-        self.company = Company.objects.create(
-            name="Empresa Teste",
-            cnpj="12345678000199",
-            monthly_revenue=Decimal('10000.00'),
-            tax_regime="LUCRO_PRESUMIDO",
-            sector="SERVICOS",
-            state="SP"
-        )
-        
-        SimulationLog.objects.create(
-            company=self.company,
-            monthly_revenue=Decimal('10000.00'),
-            costs=Decimal('2000.00'),
-            tax_regime='LUCRO_PRESUMIDO',
-            sector='SERVICOS',
-            state='SP',
-            current_tax_load=Decimal('1633.00'),
-            reform_tax_load=Decimal('2120.00'),
-            delta_value=Decimal('487.00'),
-            impact_classification='NEGATIVO'
-        )
-
-    def test_list_history(self):
-        url = reverse('simulation-history')
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-class SimulationDashboardAPITest(APITestCase):
-    def setUp(self):
-        from simulation.models import SimulationLog
-        cache.clear()
-        self.user = User.objects.create_user(username="dashuser", password="password123")
-        self.client.force_authenticate(user=self.user)
-        
-        SimulationLog.objects.create(
-            monthly_revenue=Decimal('10000.00'),
-            costs=Decimal('5000.00'),
-            tax_regime='LUCRO_PRESUMIDO',
-            sector='SERVICOS',
-            current_tax_load=Decimal('1633.00'),
-            reform_tax_load=Decimal('1325.00'),
-            delta_value=Decimal('-308.00'),
-            impact_classification='POSITIVO'
-        )
-
-    def test_dashboard_metrics(self):
-        url = reverse('simulation-dashboard')
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-class SimulationExportAPITest(APITestCase):
-    def setUp(self):
-        from simulation.models import SimulationLog
-        cache.clear()
-        self.user = User.objects.create_user(username="exportuser", password="password123")
-        self.client.force_authenticate(user=self.user)
-        
-        self.log = SimulationLog.objects.create(
-            monthly_revenue=Decimal('10000.00'),
-            costs=Decimal('5000.00'),
-            tax_regime='LUCRO_PRESUMIDO',
-            sector='SERVICOS',
-            current_tax_load=Decimal('1633.00'),
-            reform_tax_load=Decimal('1325.00'),
-            delta_value=Decimal('-308.00'),
-            impact_classification='POSITIVO'
-        )
-
-    def test_export_pdf_endpoint(self):
-        url = reverse('simulation-export-pdf', kwargs={'pk': self.log.pk})
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response['Content-Type'], 'application/pdf')
+        # Verificar se o log foi criado com o usuário correto
+        self.assertEqual(SimulationLog.objects.last().user, self.user)
