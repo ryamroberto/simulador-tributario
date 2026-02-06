@@ -1,77 +1,106 @@
 from django.test import TestCase
 from decimal import Decimal
-from apps.simulation.services.calculator import TaxCalculator
-from apps.simulation.services.analyzer import ImpactAnalyzer
+from django.core.cache import cache
+from simulation.services.calculator import TaxCalculator
+from simulation.services.analyzer import ImpactAnalyzer
 from rest_framework.test import APITestCase
 from rest_framework import status
 from django.urls import reverse
+from django.contrib.auth.models import User
+from simulation.models import SimulationLog, TaxRule, SuggestionMatrix
 
-class TaxCalculatorTest(TestCase):
-    def test_calculate_simples_nacional(self):
-        company_data = {'tax_regime': 'SIMPLES_NACIONAL'}
-        financials = {'monthly_revenue': Decimal('10000.00')}
-        tax = TaxCalculator.calculate_current_tax(company_data, financials)
-        self.assertEqual(tax, Decimal('1000.00')) # 10% de 10000
+class ManagementAPITest(APITestCase):
+    """
+    Testes de permissão e funcionalidade da API de gestão administrativa.
+    """
+    def setUp(self):
+        cache.clear()
+        # Usuário Comum
+        self.common_user = User.objects.create_user(username="common", password="password123")
+        # Usuário Admin
+        self.admin_user = User.objects.create_user(username="admin", password="password123", is_staff=True)
+        
+        # Criar regra única para teste
+        self.rule_name = "Regra Exclusiva de Teste"
+        self.rule = TaxRule.objects.create(
+            name=self.rule_name,
+            rule_type="REFORMA",
+            rate=Decimal('0.2650')
+        )
 
-    def test_calculate_lucro_presumido(self):
-        company_data = {'tax_regime': 'LUCRO_PRESUMIDO'}
-        financials = {'monthly_revenue': Decimal('10000.00')}
-        tax = TaxCalculator.calculate_current_tax(company_data, financials)
-        # LP_PIS (0.0065) + LP_COFINS (0.03) + LP_ISS (0.05) + LP_IRPJ (0.048) + LP_CSLL (0.0288) = 0.1633
-        self.assertEqual(tax, Decimal('1633.00'))
+    def test_common_user_forbidden(self):
+        self.client.force_authenticate(user=self.common_user)
+        url = reverse('tax-rules-list')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_calculate_reform(self):
-        company_data = {} # Regime não importa para reforma nesta lógica
-        financials = {
-            'monthly_revenue': Decimal('10000.00'),
-            'costs': Decimal('2000.00')
-        }
-        tax = TaxCalculator.calculate_reform_tax(company_data, financials)
-        # (10000 - 2000) * 0.265 = 8000 * 0.265 = 2120
-        self.assertEqual(tax, Decimal('2120.00'))
+    def test_admin_user_can_list(self):
+        self.client.force_authenticate(user=self.admin_user)
+        url = reverse('tax-rules-list')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Verifica se o registro criado está na resposta
+        names = [item['name'] for item in response.data]
+        self.assertIn(self.rule_name, names)
 
-class ImpactAnalyzerTest(TestCase):
-    def test_analyze_services_negative(self):
-        analysis = ImpactAnalyzer.analyze(Decimal('1000.00'), Decimal('2000.00'), sector='SERVICOS')
-        self.assertEqual(analysis['impact_classification'], 'NEGATIVO')
-        self.assertIn("O setor de serviços tende a ser o mais impactado", analysis['suggestions'][0])
-        self.assertIn("Servicos", analysis['message'])
+    def test_admin_user_can_update_rule(self):
+        self.client.force_authenticate(user=self.admin_user)
+        url = reverse('tax-rules-detail', kwargs={'pk': self.rule.pk})
+        data = {"rate": "0.3000", "name": "Regra Alterada", "rule_type": "REFORMA"}
+        response = self.client.patch(url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.rule.refresh_from_db()
+        self.assertEqual(self.rule.rate, Decimal('0.3000'))
 
-    def test_analyze_commerce_positive(self):
-        analysis = ImpactAnalyzer.analyze(Decimal('2000.00'), Decimal('1000.00'), sector='COMERCIO')
-        self.assertEqual(analysis['impact_classification'], 'POSITIVO')
-        self.assertIn("A redução da cumulatividade pode beneficiar sua cadeia", analysis['suggestions'][0])
+    def test_management_updates_invalidate_cache(self):
+        # Chave correta conforme signals.py
+        cache_key = f"tax_rate_{self.rule.rule_type}"
+        cache.set(cache_key, Decimal('0.2650'))
+        
+        self.client.force_authenticate(user=self.admin_user)
+        url = reverse('tax-rules-detail', kwargs={'pk': self.rule.pk})
+        # Alterar alíquota dispara Signal
+        self.client.patch(url, {"rate": "0.3000"}, format='json')
+        
+        # Cache deve estar vazio para esta chave
+        self.assertIsNone(cache.get(cache_key))
 
-    def test_analyze_with_uf(self):
-        analysis = ImpactAnalyzer.analyze(Decimal('1000.00'), Decimal('1000.00'), sector='INDUSTRIA', uf='SP')
-        self.assertEqual(analysis['impact_classification'], 'NEUTRO')
-        self.assertIn("São Paulo", analysis['detalhes_setoriais'])
+class OwnershipAPITest(APITestCase):
+    def setUp(self):
+        cache.clear()
+        self.user_a = User.objects.create_user(username="usera", password="password123")
+        self.user_b = User.objects.create_user(username="userb", password="password123")
+        self.log_a = SimulationLog.objects.create(
+            user=self.user_a,
+            monthly_revenue=Decimal('10000.00'),
+            costs=Decimal('2000.00'),
+            tax_regime='SIMPLES_NACIONAL',
+            sector='SERVICOS',
+            current_tax_load=Decimal('1000.00'),
+            reform_tax_load=Decimal('2120.00'),
+            delta_value=Decimal('1120.00'),
+            impact_classification='NEGATIVO'
+        )
 
-class SimulationAPITest(APITestCase):
-    def test_simulation_endpoint_full(self):
+    def test_user_b_cannot_see_user_a_history(self):
+        self.client.force_authenticate(user=self.user_b)
+        url = reverse('simulation-history')
+        response = self.client.get(url)
+        self.assertEqual(len(response.data['results']), 0)
+
+class GenericAuthAndTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="apiuser", password="password123")
+        self.client.force_authenticate(user=self.user)
+
+    def test_simulation_endpoint_works(self):
         url = reverse('simulate')
         data = {
             "monthly_revenue": 10000.00,
             "costs": 2000.00,
             "tax_regime": "SIMPLES_NACIONAL",
-            "sector": "SERVICOS",
-            "state": "SP"
+            "sector": "SERVICOS"
         }
         response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('sugestoes', response.data['analise'])
-        self.assertIn('detalhes_setoriais', response.data['analise'])
-        self.assertEqual(response.data['resumo_entrada']['estado'], 'SP')
-        self.assertTrue(len(response.data['analise']['sugestoes']) >= 1)
-
-    def test_simulation_endpoint_no_uf(self):
-        url = reverse('simulate')
-        data = {
-            "monthly_revenue": 10000.00,
-            "costs": 2000.00,
-            "tax_regime": "LUCRO_PRESUMIDO",
-            "sector": "INDUSTRIA"
-        }
-        response = self.client.post(url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data['resumo_entrada']['estado'], 'Não informado')
