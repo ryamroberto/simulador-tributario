@@ -5,6 +5,8 @@ __pycache__/
 *.so
 .Python
 env/
+venv/
+.venv/
 build/
 develop-eggs/
 dist/
@@ -21,6 +23,12 @@ wheels/
 .installed.cfg
 *.egg
 
+# Caches
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
 # Django
 db.sqlite3
 *.log
@@ -34,6 +42,9 @@ staticfiles/
 .idea/
 *.swp
 *.swo
+
+# AIOS Framework (Development only)
+# aios-django/
 
 # OS
 .DS_Store
