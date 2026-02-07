@@ -10,6 +10,7 @@ from django.db.models import Avg, Count
 from django.http import FileResponse
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter
+from rest_framework.throttling import ScopedRateThrottle
 from .serializers import (
     SimulationInputSerializer, 
     SimulationLogListSerializer,
@@ -132,6 +133,8 @@ class SimulationDashboardView(APIView):
 
 class SimulationExportPDFView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'export'
     def get(self, request, pk, *args, **kwargs):
         log = get_object_or_404(SimulationLog, pk=pk, user=request.user)
         pdf_buffer = PDFGenerator.generate_simulation_report(log)
@@ -139,6 +142,8 @@ class SimulationExportPDFView(APIView):
 
 class SimulationHistoryExportView(APIView):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'export'
     def get(self, request, *args, **kwargs):
         queryset = SimulationLog.objects.filter(user=request.user).order_by('-created_at')
         export_format = request.query_params.get('format', 'csv').lower()
