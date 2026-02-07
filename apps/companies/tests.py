@@ -17,7 +17,13 @@ class CompanyModelTest(TestCase):
         self.assertEqual(str(company), "Empresa Teste")
         self.assertEqual(company.cnpj, "11.222.333/0001-81")
 
+from django.contrib.auth.models import User
+
 class CompanyAPITest(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="apiuser", password="password123")
+        self.client.force_authenticate(user=self.user)
+
     def test_create_company_api(self):
         url = reverse('company-list')
         data = {
