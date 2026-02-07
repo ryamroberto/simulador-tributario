@@ -34,10 +34,10 @@ simulador-tributario/
 ### 3.1. Detalhamento dos Apps
 
 #### **`apps/core`**
-*   **Responsabilidade:** Fornecer estruturas base para outros apps.
+*   **Responsabilidade:** Fornecer estruturas base e tratamento global de exceções.
 *   **Componentes:**
-    *   `models.py`: Modelos abstratos (ex: `TimeStampedModel` com `created_at`, `updated_at`).
-    *   `utils.py`: Funções utilitárias genéricas.
+    *   `exceptions.py`: Custom Exception Handler para tradução de erros de Throttling e outros.
+    *   `validators.py`: Validações de CNPJ e regras de negócio comuns.
 
 #### **`apps/companies`**
 *   **Responsabilidade:** Gerenciar os dados cadastrais básicos da empresa.
@@ -45,34 +45,34 @@ simulador-tributario/
     *   `models.py`:
         *   `Company`: Armazena faturamento, setor, UF, regime atual e número de funcionários.
     *   `serializers.py`: Validação e serialização dos dados da empresa.
-    *   `views.py`: Endpoints para criação e recuperação de dados de empresa (se necessário persistência). *Nota: Para uma simulação puramente stateless, este app pode servir apenas para validação de entrada.*
 
 #### **`apps/simulation`**
-*   **Responsabilidade:** Executar a lógica de negócio principal (cálculos tributários).
+*   **Responsabilidade:** Executar a lógica de negócio principal, persistência de histórico e exportação.
 *   **Componentes:**
     *   `services/`:
-        *   `calculator.py`: Lógica pura de cálculo (Tax Calculator). Contém as regras "hardcoded" para "Cenário Atual" e "Cenário Pós-Reforma".
-        *   `analyzer.py`: Lógica de comparação (Delta) e classificação (Positivo/Neutro/Negativo).
+        *   `calculator.py`: Lógica pura de cálculo (Tax Calculator).
+        *   `analyzer.py`: Impacto (Delta) e classificação. Consome `SuggestionMatrix` dinamicamente.
+        *   `exporter.py`: Serviço `DataExporter` para geração de CSV (UTF-8 BOM) e Excel (.xlsx).
+        *   `pdf_generator.py`: Geração de relatórios detalhados em PDF.
     *   `models.py`:
-        *   `SimulationLog` (Opcional): Para registrar simulações realizadas (histórico simples).
-    *   `serializers.py`: Define o contrato de entrada (JSON com dados financeiros) e saída (JSON com resultados).
-    *   `views.py`: Endpoint `POST /api/v1/simulate/` que orquestra a chamada aos serviços e retorna o resultado.
+        *   `SimulationLog`: Persistência de cada simulação com isolamento por usuário.
+        *   `TaxRule`: Regras tributárias persistidas para fácil ajuste administrativo.
+        *   `SuggestionMatrix`: Sugestões dinâmicas baseadas em setor e impacto.
+    *   `views.py`: Orquestração de endpoints, incluindo Throttling e exportações.
 
 ## 4. Fluxo de Dados (Data Flow)
 
-1.  **Request:** O cliente envia um `POST` para `/api/v1/simulate/` com um payload JSON contendo:
-    *   Dados da Empresa (Faturamento, Regime, Setor, etc.)
-    *   Dados Financeiros do Período (Faturamento mês, Custos, etc.)
-2.  **Validação:** O `SimulationSerializer` valida os tipos de dados e campos obrigatórios.
+1.  **Request:** O cliente envia requisições autenticadas via JWT para os endpoints do app `simulation`.
+2.  **Segurança & Validação:** 
+    *   `JWTAuthentication` valida a identidade do usuário.
+    *   `Rate Limiting` (Throttling) protege os endpoints contra sobrecarga.
+    *   `SimulationInputSerializer` valida a integridade dos dados financeiros.
 3.  **Processamento (Service Layer):**
-    *   O `CalculatorService` recebe os dados validados.
-    *   Executa `calculate_current_tax(data)` -> Retorna carga atual.
-    *   Executa `calculate_reform_tax(data)` -> Retorna carga pós-reforma.
-    *   Executa `analyze_impact(current, reformed)` -> Calcula deltas e define a mensagem de sugestão.
-4.  **Response:** A API retorna um JSON estruturado com:
-    *   Resumo dos Inputs.
-    *   Resultados Detalhados (Antes vs. Depois).
-    *   Análise de Impacto (Texto + Classificação).
+    *   `TaxCalculator` executa os cálculos baseados em regras (persistidas ou hardcoded).
+    *   `ImpactAnalyzer` realiza a análise qualitativa consumindo a `SuggestionMatrix` (com cache).
+4.  **Persistence & Response:**
+    *   A simulação é registrada automaticamente no `SimulationLog` vinculada ao usuário logado.
+    *   A API retorna o JSON estruturado ou o arquivo binário (PDF/Excel/CSV) solicitado.
 
 ## 5. Design da API (Contrato Simplificado)
 
@@ -118,10 +118,14 @@ simulador-tributario/
 *   **Testes Unitários (`tests/unit`):** Foco total na lógica de cálculo (`services/calculator.py`). Garantir que para inputs conhecidos (A), a saída seja exatamente (B). Testar cenários de borda (faturamento zero, custos altos, etc.).
 *   **Testes de Integração (`tests/integration`):** Validar se o endpoint `/simulate/` aceita o JSON correto e retorna o status 200 com a estrutura esperada.
 
-## 7. Segurança e Escalabilidade
+## 7. Segurança e Resiliência
 
-*   **Segurança:** Uso padrão dos middlewares de segurança do Django. Validação estrita de inputs via Serializers.
-*   **Escalabilidade:** Como a simulação é processamento de CPU e não depende de I/O pesado de banco de dados (stateless por natureza), a aplicação escala horizontalmente com facilidade atrás de um Load Balancer se necessário.
+*   **Autenticação:** JWT (SimpleJWT) em todos os endpoints privados.
+*   **Isolamento de Dados:** Filtros forçados por `request.user` garantem que um usuário nunca acesse dados de terceiros.
+*   **Throttling:** 
+    *   `UserRateThrottle`: 1000/dia.
+    *   `ScopedRateThrottle` (scope: `export`): 10/minuto para endpoints pesados.
+*   **Performance:** Uso de `LocMemCache` para persistência de regras e sugestões frequentes.
 
 ## 8. Considerações Finais
 

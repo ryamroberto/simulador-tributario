@@ -1,5 +1,7 @@
 from django.db import models
+from django.contrib.auth.models import User
 from core.models import TimeStampedModel
+from core.validators import validate_cnpj
 
 class Company(TimeStampedModel):
     class Sector(models.TextChoices):
@@ -40,7 +42,22 @@ class Company(TimeStampedModel):
         SE = 'SE', 'Sergipe'
         TO = 'TO', 'Tocantins'
 
+    user = models.ForeignKey(
+        User, 
+        on_delete=models.CASCADE, 
+        null=True, 
+        blank=True, 
+        verbose_name="Usuário Proprietário",
+        related_name="companies"
+    )
     name = models.CharField(max_length=255, verbose_name="Nome da Empresa")
+    cnpj = models.CharField(
+        max_length=18, 
+        unique=True, 
+        validators=[validate_cnpj], 
+        verbose_name="CNPJ",
+        help_text="Formato: 00.000.000/0000-00 ou apenas números."
+    )
     monthly_revenue = models.DecimalField(max_digits=15, decimal_places=2, verbose_name="Faturamento Mensal")
     sector = models.CharField(max_length=20, choices=Sector.choices, verbose_name="Setor de Atuação")
     state = models.CharField(max_length=2, choices=UF.choices, verbose_name="UF")
