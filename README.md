@@ -35,4 +35,3 @@ python manage.py test
 ```
 
 ---
-Desenvolvido como parte do ecossistema Synkra AIOS.
